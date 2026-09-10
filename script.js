@@ -26,22 +26,27 @@ addEventListener('resize', resize);
 resize();
 
 function drawTexture() {
+  const skyHeight = height * .75;
+  textureCtx.save();
+  textureCtx.setTransform(1, 0, 0, 1, 0, 0);
+  textureCtx.clearRect(0, 0, texture.width, texture.height);
+  textureCtx.restore();
   textureCtx.fillStyle = '#087aba';
-  textureCtx.fillRect(0, 0, width, height);
+  textureCtx.fillRect(0, 0, width, skyHeight);
   const bands = 14;
   for (let i = 0; i < bands; i++) {
-    const y = Math.random() * height;
+    const y = Math.random() * skyHeight;
     const h = 24 + Math.random() * 72;
     const alpha = 0.018 + Math.random() * 0.028;
     textureCtx.fillStyle = `rgba(${Math.random() > .55 ? '181,234,255' : '0,36,99'},${alpha})`;
     textureCtx.fillRect(0, y, width, h);
   }
-  const count = Math.ceil(width * height / 180);
+  const count = Math.ceil(width * skyHeight / 180);
   for (let i = 0; i < count; i++) {
     const s = Math.random() < .85 ? 1 : 2;
     const a = 0.025 + Math.random() * 0.065;
     textureCtx.fillStyle = Math.random() < .62 ? `rgba(230,255,255,${a})` : `rgba(0,31,84,${a})`;
-    textureCtx.fillRect(Math.random() * width, Math.random() * height, s, s);
+    textureCtx.fillRect(Math.random() * width, Math.random() * skyHeight, s, s);
   }
 }
 
@@ -54,7 +59,7 @@ function capsule(a, b, radius) {
   return { x: x - (b.y - a.y) / length * offset, y: y + (b.x - a.x) / length * offset };
 }
 
-function buildHuman() {
+function buildHuman(density = 1) {
   const particles = [];
   const add = (p, boost = 0, part = 'torso') => {
     const leftDensity = Math.max(.2, Math.min(1, .32 + ((145 - p.x) / 310) * .68 + boost));
@@ -69,7 +74,8 @@ function buildHuman() {
   const fill = (sampler, count, boost = 0, part = 'torso') => {
     let attempts = 0;
     const start = particles.length;
-    while (particles.length - start < count && attempts++ < count * 18) add(sampler(), boost, part);
+    const target = Math.max(1, Math.round(count * density));
+    while (particles.length - start < target && attempts++ < target * 18) add(sampler(), boost, part);
   };
 
   // 头、躯干、双臂、双腿：组成饱满的奔跑人物外轮廓。
@@ -101,7 +107,7 @@ function buildHuman() {
     { part: 'legRight', make: () => capsule({ x: 25, y: -80 }, { x: 70, y: 72 }, 28) },
     { part: 'torso', make: () => ({ x: -24 + Math.random() * 70, y: -184 + Math.random() * 105 }) }
   ];
-  for (let i = 0; i < 115; i++) {
+  for (let i = 0; i < Math.round(115 * density); i++) {
     const roll = Math.random();
     const region = roll < .22 ? regions[0] : roll < .28 ? regions[1] : roll < .60 ? regions[2] : roll < .64 ? regions[3] : regions[4];
     add(region.make(), .08, region.part);
@@ -194,7 +200,10 @@ function migrateParticle(p, phase, part, x, y, age) {
 
 function makeWalker(x, y) {
   const startX = Math.max(48, Math.min(width - 72, x));
-  walkers.push({ x: startX, startX, y: Math.max(250, Math.min(height - 16, y)), age: 0, duration: 5200 + Math.random() * 900, scale: Math.max(.75, Math.min(1.25, height / 760)), seed: Math.random() * 10, particles: buildHuman(), overlapActive: false, armScatterActive: false, leftArmMigrationActive: false, headMigrationActive: false, nextDissipation: 1150, dissipationIndex: 0, scatterBursts: [] });
+  // 每个人只改变整体高度与箭头数量；骨架比例、步幅和行走节奏完全共用。
+  const size = .56 + Math.random() * .58;
+  const density = .20 + size * .70;
+  walkers.push({ x: startX, startX, y: Math.max(250, Math.min(height - 16, y)), age: 0, duration: 5200 + Math.random() * 900, scale: Math.max(.75, Math.min(1.25, height / 760)) * size, seed: Math.random() * 10, particles: buildHuman(density), overlapActive: false, armScatterActive: false, leftArmMigrationActive: false, headMigrationActive: false, nextDissipation: 1150, dissipationIndex: 0, scatterBursts: [] });
   glitchEnergy = 1;
 }
 
@@ -219,6 +228,10 @@ function animate(now) {
     drawTexture();
     lastTextureUpdate = now;
   }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
   ctx.drawImage(texture, 0, 0, width, height);
   glitchOverlay(glitchEnergy);
   walkers = walkers.filter(w => {
