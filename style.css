@@ -24,5 +24,24 @@ body {
   pointer-events: none;
   opacity: .9;
   background: url('assets/lawn.png?v=2') center bottom / 100% auto no-repeat;
-  filter: saturate(.86) brightness(.82) contrast(1.05);
+  overflow: hidden;
+  filter: saturate(.94) brightness(.78) contrast(1.13);
+}
+#lawn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: .34;
+  background:
+    repeating-linear-gradient(0deg, rgba(188,255,112,.22) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(0,12,2,.24) 0 1px, transparent 1px 7px),
+    linear-gradient(90deg, transparent 0 27%, rgba(95,255,89,.16) 29% 30%, transparent 32% 68%, rgba(1,35,13,.22) 70% 72%, transparent 74%);
+  mix-blend-mode: overlay;
+  animation: lawn-glitch 1.8s steps(3, end) infinite;
+}
+@keyframes lawn-glitch {
+  0%, 68%, 100% { transform: translate(0, 0); opacity: .28; }
+  72% { transform: translate(-5px, 1px); opacity: .48; }
+  76% { transform: translate(7px, -1px); opacity: .18; }
+  80% { transform: translate(-2px, 0); opacity: .42; }
 }
