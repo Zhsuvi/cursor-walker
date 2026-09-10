@@ -24,33 +24,274 @@ const backgroundIcons = iconSources.map(src => {
   image.src = src;
   return image;
 });
-
-function drawBackgroundIcons() {
-  // 2 行 × 3 列；保持原比例，让每个图标最长的一边达到 100 像素。
-  const unit = 100;
-  const left = 48;
-  const top = 42;
-  const columnGap = 32;
-  const rowGap = 28;
-  const layout = [
+const trashLid = new Image();
+trashLid.src = 'assets/icons/trash-lid.png';
+const fallenTrash = new Image();
+fallenTrash.src = 'assets/icons/trash-final.png';
+const trashCore = new Image();
+trashCore.src = 'assets/icons/trash-core.png';
+const trashShadow = new Image();
+trashShadow.src = 'assets/icons/trash-shadow.png';
+const flowerBouquet = new Image();
+flowerBouquet.src = 'assets/icons/flower-bouquet.png';
+const lawnFlowerSprites = Array.from({ length: 21 }, (_, index) => {
+  const image = new Image();
+  image.src = `assets/icons/lawn-flowers/flower-${String(index + 1).padStart(2, '0')}.png`;
+  return image;
+});
+const iconGrid = {
+  unit: 100,
+  left: 48,
+  top: 42,
+  columnGap: 32,
+  rowGap: 28,
+  layout: [
     { column: 0, row: 0 }, { column: 1, row: 0 }, { column: 2, row: 0 },
     { column: 0, row: 1 }, { column: 1, row: 1 }, { column: 2, row: 1 }
+  ]
+};
+let trashState = 0;
+let trashStarted = 0;
+let trashFlow = [];
+let computerShakeAt = 0;
+const iconFirstShakeAt = Array(6).fill(-1);
+let documentLidClicks = 0;
+let lidMoveAt = 0;
+let tapeLidClicks = 0;
+let lidFallAt = 0;
+let lawnFlowers = [];
+
+function iconSlot(index) {
+  const item = iconGrid.layout[index];
+  return {
+    x: iconGrid.left + item.column * (iconGrid.unit + iconGrid.columnGap),
+    y: iconGrid.top + item.row * (iconGrid.unit + iconGrid.rowGap)
+  };
+}
+
+function startTrashFall(now) {
+  trashState = 2;
+  trashStarted = now;
+  computerShakeAt = now + 1250;
+  // 从桶口依次掉出，不额外凭空生成；每支鼠标箭头都属于这股向下的箭头流。
+  trashFlow = Array.from({ length: 46 }, (_, index) => ({
+    id: index,
+    delay: index * 22 + Math.random() * 150,
+    drift: (Math.random() - .5) * 92,
+    wobble: Math.random() * Math.PI * 2,
+    scale: .3 + Math.random() * .23,
+    turn: (Math.random() - .5) * .58
+  }));
+  glitchEnergy = 1;
+}
+
+function drawTrashFlow(now, layer) {
+  if (trashState !== 2) return;
+  const elapsed = now - trashStarted;
+  const source = iconSlot(0);
+  const globe = iconSlot(3);
+  const computer = iconSlot(4);
+  trashFlow.forEach(p => {
+    const age = elapsed - p.delay;
+    if (layer === 'pour') {
+      if (age < 0 || age > 880) return;
+      const progress = age / 880;
+      const wobble = Math.sin(progress * 10 + p.wobble) * 7 * (1 - progress);
+      // 从倒下垃圾桶画面中央的洞口持续倒出，再受重力向下流到地球。
+      const outletX = source.x + 61;
+      const outletY = source.y + 53;
+      cursor({
+        x: outletX + p.drift * .16 * progress + wobble,
+        y: outletY + progress * (globe.y + 48 - outletY),
+        scale: p.scale,
+        rotation: p.turn + progress * .22
+      }, Math.min(1, age / 110) * (1 - progress * .18));
+    } else {
+      // 落到地球后向右飞溅；此层随后被电脑覆盖，形成撞到电脑后消失的效果。
+      const splashAge = age - 690;
+      // 只有两支箭头从地球边缘飞溅到电脑；其余箭头都在地球后方结束。
+      if (splashAge < 0 || splashAge > 640 || (p.id !== 8 && p.id !== 29)) return;
+      const progress = splashAge / 640;
+      cursor({
+        x: globe.x + 52 + progress * (computer.x - globe.x + 15) + p.drift * .15,
+        y: globe.y + 54 - Math.sin(progress * Math.PI) * (22 + Math.abs(p.drift) * .2) + p.drift * .08,
+        scale: p.scale * (.9 + progress * .18),
+        rotation: p.turn - progress * .7
+      }, Math.min(1, splashAge / 90) * (1 - progress * .1));
+    }
+  });
+}
+
+function drawFlowerBouquet(now, earthShake = 0) {
+  if (trashState !== 2 || !flowerBouquet.complete || !flowerBouquet.naturalWidth) return;
+  // 最后一支箭头完全消失后，花从地球表面向上生长。
+  const growthStart = trashStarted + 2250;
+  if (now < growthStart) return;
+  const progress = Math.min(1, (now - growthStart) / 720);
+  const ease = 1 - Math.pow(1 - progress, 3);
+  const globe = iconSlot(3);
+  // 花束从地球中生长到前景，覆盖住上方倒下的垃圾桶。
+  const fullHeight = 150;
+  const fullWidth = fullHeight * flowerBouquet.naturalWidth / flowerBouquet.naturalHeight;
+  const h = fullHeight * (.12 + ease * .88);
+  const w = fullWidth * (.12 + ease * .88);
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = Math.min(1, progress * 2.2);
+  // 根部扎在地球上部，花在前景向上生长并遮住垃圾桶。
+  ctx.drawImage(flowerBouquet, globe.x + 51 - w / 2 + earthShake, globe.y + 54 - h, w, h);
+  ctx.restore();
+}
+
+function plantLawnFlowers(now) {
+  // 草坪从远到近依次变大；每一朵的最高边都严格不超过 40px。
+  const lawnTop = height * .75;
+  const usableHeight = Math.max(40, height - lawnTop - 12);
+  const count = 8 + Math.floor(Math.random() * 6);
+  const planted = Array.from({ length: count }, (_, index) => {
+    const depth = .12 + Math.random() * .88;
+    const maxSide = 7 + depth * 33;
+    return {
+      image: lawnFlowerSprites[Math.floor(Math.random() * lawnFlowerSprites.length)],
+      x: 16 + Math.random() * Math.max(1, width - 32),
+      groundY: lawnTop + usableHeight * depth,
+      maxSide,
+      started: now,
+      delay: index * 68 + Math.random() * 170,
+      flip: Math.random() < .5 ? -1 : 1
+    };
+  });
+  lawnFlowers.push(...planted);
+  // 保留最近几次种下的花，避免连续点击后草坪变成密集贴图。
+  lawnFlowers = lawnFlowers.slice(-72);
+  glitchEnergy = Math.max(glitchEnergy, .45);
+}
+
+function drawLawnFlowers(now) {
+  lawnFlowers.forEach(flower => {
+    const image = flower.image;
+    if (!image.complete || !image.naturalWidth) return;
+    const progress = Math.max(0, Math.min(1, (now - flower.started - flower.delay) / 420));
+    if (!progress) return;
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const side = flower.maxSide * (.12 + ease * .88);
+    const ratio = image.naturalWidth / image.naturalHeight;
+    const w = ratio >= 1 ? side : side * ratio;
+    const h = ratio >= 1 ? side / ratio : side;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = Math.min(1, progress * 2.4);
+    ctx.translate(flower.x, flower.groundY);
+    ctx.scale(flower.flip, 1);
+    // 根部贴住草地，花朵向上长出。
+    ctx.drawImage(image, -w / 2, -h, w, h);
+    ctx.restore();
+  });
+}
+
+function drawTrashLid(now) {
+  if (trashState !== 2 || !trashLid.complete || !trashLid.naturalWidth) return;
+  const source = iconSlot(0);
+  const target = iconSlot(2);
+  const tape = iconSlot(5);
+  const base = { x: target.x + 50, y: target.y + 20, rotation: 0 };
+  const stages = [
+    base,
+    { x: target.x + 65, y: target.y + 22, rotation: .15 },
+    { x: target.x + 80, y: target.y + 25, rotation: .3 },
+    { x: tape.x + 50, y: tape.y + 22, rotation: 0 }
   ];
+  let x;
+  let y;
+  let rotation;
+  if (documentLidClicks === 0) {
+    const flight = Math.min(1, (now - trashStarted) / 720);
+    x = source.x + 44 + (base.x - (source.x + 44)) * flight;
+    y = source.y + 18 - Math.sin(flight * Math.PI) * 82 + (base.y - (source.y + 18)) * flight;
+    rotation = Math.sin(flight * Math.PI) * Math.PI * .8;
+  } else {
+    const move = Math.min(1, (now - lidMoveAt) / 320);
+    const from = stages[documentLidClicks - 1];
+    const to = stages[documentLidClicks];
+    x = from.x + (to.x - from.x) * move;
+    y = from.y + (to.y - from.y) * move;
+    rotation = from.rotation + (to.rotation - from.rotation) * move;
+  }
+  // 桶盖落在磁带后，第三次点击磁带会把它震落到下方。
+  if (tapeLidClicks >= 3) {
+    const fall = Math.min(1, (now - lidFallAt) / 520);
+    const lawnY = height * .75 + 34;
+    y += (lawnY - y) * fall;
+    x += fall * 14;
+    rotation += fall * .32;
+  }
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.drawImage(trashLid, -43, -22, 86, 43);
+  ctx.restore();
+}
+
+function drawBackgroundIcons(now) {
+  // 2 行 × 3 列；保持原比例，让每个图标最长的一边达到 100 像素。
+  const { unit } = iconGrid;
+  const drawIcon = (index, shake = 0) => {
+    const image = backgroundIcons[index];
+    if (!image.complete || !image.naturalWidth) return;
+    const item = iconSlot(index);
+    const ratio = unit / Math.max(image.naturalWidth, image.naturalHeight);
+    const w = image.naturalWidth * ratio;
+    const h = image.naturalHeight * ratio;
+    const elapsed = now - iconFirstShakeAt[index];
+    const firstShake = iconFirstShakeAt[index] >= 0 && elapsed < 240
+      ? Math.sin(elapsed * Math.PI * 2 / 240) * 3.5
+      : 0;
+    ctx.drawImage(image, item.x + (unit - w) / 2 + shake + firstShake, item.y + (unit - h) / 2, w, h);
+  };
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = .94;
-  backgroundIcons.forEach((image, index) => {
-    if (!image.complete || !image.naturalWidth) return;
-    const item = layout[index];
-    const ratio = unit / Math.max(image.naturalWidth, image.naturalHeight);
-    const w = image.naturalWidth * ratio;
-    const h = image.naturalHeight * ratio;
-    const x = left + item.column * (unit + columnGap) + (unit - w) / 2;
-    const y = top + item.row * (unit + rowGap) + (unit - h) / 2;
-    ctx.drawImage(image, x, y, w, h);
-  });
+  // 顶行先绘制；地球、电脑将在箭头流的不同层级中再绘制。
+  if (trashState < 2) drawIcon(0);
+  drawIcon(1);
+  drawIcon(2);
+  if (trashState === 2) {
+    const source = iconSlot(0);
+    const progress = Math.min(1, (now - trashStarted) / 600);
+    const body = fallenTrash.complete && fallenTrash.naturalWidth ? fallenTrash : backgroundIcons[0];
+    const fallY = source.y + progress * 18;
+    // 最终状态直接使用用户指定的完整垃圾桶图，保持其原有层次和轮廓。
+    ctx.drawImage(body, source.x, fallY, 100, 100);
+
+  }
   ctx.restore();
+
+  // 下落流先画在地球后面，形成落到地球表面的遮挡关系。
+  drawTrashFlow(now, 'pour');
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = .94;
+  drawIcon(3);
+  ctx.restore();
+  const earthElapsed = now - iconFirstShakeAt[3];
+  const earthShake = iconFirstShakeAt[3] >= 0 && earthElapsed < 240
+    ? Math.sin(earthElapsed * Math.PI * 2 / 240) * 3.5
+    : 0;
+  drawFlowerBouquet(now, earthShake);
+  // 飞溅箭头覆盖地球但会被随后的电脑图标遮住。
+  drawTrashFlow(now, 'splash');
+  const computerElapsed = Math.min(300, Math.max(0, now - computerShakeAt));
+  const computerShake = now >= computerShakeAt ? Math.sin(computerElapsed * Math.PI * 4 / 300) * 2.5 : 0;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = .94;
+  drawIcon(4, computerShake);
+  drawIcon(5);
+  ctx.restore();
+  // 桶盖必须在所有图标之上，最终才能明确盖在磁带图标上方。
+  drawTrashLid(now);
 }
 
 function resize() {
@@ -258,10 +499,14 @@ function migrateParticle(p, phase, part, x, y, age) {
 
 function makeWalker(x, y) {
   const startX = Math.max(48, Math.min(width - 72, x));
-  // 每个人只改变整体高度与箭头数量；骨架比例、步幅和行走节奏完全共用。
-  const size = .56 + Math.random() * .58;
+  // 最大人物保持现有尺寸；其他人物至少比它矮 100px，取消接近最大人物的中间尺寸。
+  const viewportScale = Math.max(.75, Math.min(1.25, height / 760));
+  const largestSize = 1.14;
+  const humanHeight = 314;
+  const smallerSizeLimit = Math.max(.56, largestSize - 100 / (humanHeight * viewportScale));
+  const size = .56 + Math.random() * Math.max(0, smallerSizeLimit - .56);
   const density = .20 + size * .70;
-  walkers.push({ x: startX, startX, y: Math.max(250, Math.min(height - 16, y)), age: 0, duration: 5200 + Math.random() * 900, scale: Math.max(.75, Math.min(1.25, height / 760)) * size, size, seed: Math.random() * 10, particles: buildHuman(density), overlapActive: false, armScatterActive: false, leftArmMigrationActive: false, headMigrationActive: false, nextDissipation: 1150, dissipationIndex: 0, scatterBursts: [] });
+  walkers.push({ x: startX, startX, y: Math.max(250, Math.min(height - 16, y)), age: 0, duration: 5200 + Math.random() * 900, scale: viewportScale * size, size, seed: Math.random() * 10, particles: buildHuman(density), overlapActive: false, armScatterActive: false, leftArmMigrationActive: false, headMigrationActive: false, nextDissipation: 1150, dissipationIndex: 0, scatterBursts: [] });
   glitchEnergy = 1;
 }
 
@@ -480,9 +725,59 @@ function animate(now) {
   });
   // 图标夹在两组人物之间，小人物隐在图标后，大人物覆盖在图标上。
   behindIconDraws.forEach(draw => draw());
-  drawBackgroundIcons();
+  drawBackgroundIcons(now);
+  drawLawnFlowers(now);
   frontIconDraws.forEach(draw => draw());
   requestAnimationFrame(animate);
 }
-canvas.addEventListener('pointerdown', event => makeWalker(event.clientX, event.clientY));
+canvas.addEventListener('pointerdown', event => {
+  const clickedIcon = iconGrid.layout.findIndex((_, index) => {
+    const icon = iconSlot(index);
+    return event.clientX >= icon.x && event.clientX <= icon.x + iconGrid.unit
+      && event.clientY >= icon.y && event.clientY <= icon.y + iconGrid.unit;
+  });
+  // 图标本体和周围 30px 都不生成行走人物，只有图标本体会触发各自互动。
+  const inIconSafeZone = iconGrid.layout.some((_, index) => {
+    const icon = iconSlot(index);
+    const padding = 30;
+    return event.clientX >= icon.x - padding && event.clientX <= icon.x + iconGrid.unit + padding
+      && event.clientY >= icon.y - padding && event.clientY <= icon.y + iconGrid.unit + padding;
+  });
+  if (clickedIcon !== -1) {
+    const now = performance.now();
+    if (iconFirstShakeAt[clickedIcon] < 0) iconFirstShakeAt[clickedIcon] = now;
+    if (clickedIcon === 0) {
+      if (trashState === 0) {
+        trashState = 1;
+        trashStarted = now;
+        glitchEnergy = .65;
+      } else if (trashState === 1) {
+        startTrashFall(now);
+      }
+    }
+    // 桶盖落到文档后，文档每次被点击都会抖动并把桶盖向右推；第三次让它落到磁带上。
+    if (clickedIcon === 2 && trashState === 2 && documentLidClicks < 3 && now - trashStarted > 720) {
+      documentLidClicks += 1;
+      lidMoveAt = now;
+      iconFirstShakeAt[2] = now;
+      glitchEnergy = Math.max(glitchEnergy, .4);
+    }
+    // 磁带上的桶盖也接受三次震动；第三次将桶盖震落。
+    if (clickedIcon === 5 && trashState === 2 && documentLidClicks === 3 && tapeLidClicks < 3) {
+      tapeLidClicks += 1;
+      iconFirstShakeAt[5] = now;
+      if (tapeLidClicks === 3) lidFallAt = now;
+      glitchEnergy = Math.max(glitchEnergy, .4);
+    }
+    // 地球上的花完整长出后，点击这颗开花地球，会把小花随机种到下方草坪。
+    if (clickedIcon === 3 && trashState === 2 && now >= trashStarted + 2970) {
+      plantLawnFlowers(now);
+      iconFirstShakeAt[3] = now;
+    }
+    return;
+  }
+  // 只有地球完成开花后，点击它才会把透明像素花种到草坪上。
+  if (inIconSafeZone) return;
+  makeWalker(event.clientX, event.clientY);
+});
 requestAnimationFrame(animate);
