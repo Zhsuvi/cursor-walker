@@ -10,6 +10,49 @@ let last = performance.now();
 let lastTextureUpdate = 0;
 let glitchEnergy = 0;
 
+// 左上角的像素图标属于背景层：小人物从其后方经过，大人物会遮住它们。
+const iconSources = [
+  'assets/icons/trash.png',
+  'assets/icons/movie.png',
+  'assets/icons/pages.png?v=2',
+  'assets/icons/globe.png',
+  'assets/icons/computer.png',
+  'assets/icons/cards.png'
+];
+const backgroundIcons = iconSources.map(src => {
+  const image = new Image();
+  image.src = src;
+  return image;
+});
+
+function drawBackgroundIcons() {
+  // 2 行 × 3 列；保持原比例，让每个图标最长的一边达到 100 像素。
+  const unit = 100;
+  const left = 48;
+  const top = 42;
+  const columnGap = 32;
+  const rowGap = 28;
+  const layout = [
+    { column: 0, row: 0 }, { column: 1, row: 0 }, { column: 2, row: 0 },
+    { column: 0, row: 1 }, { column: 1, row: 1 }, { column: 2, row: 1 }
+  ];
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = .94;
+  backgroundIcons.forEach((image, index) => {
+    if (!image.complete || !image.naturalWidth) return;
+    const item = layout[index];
+    const ratio = unit / Math.max(image.naturalWidth, image.naturalHeight);
+    const w = image.naturalWidth * ratio;
+    const h = image.naturalHeight * ratio;
+    const x = left + item.column * (unit + columnGap) + (unit - w) / 2;
+    const y = top + item.row * (unit + rowGap) + (unit - h) / 2;
+    ctx.drawImage(image, x, y, w, h);
+  });
+  ctx.restore();
+}
+
 function resize() {
   dpr = Math.min(devicePixelRatio || 1, 2);
   width = innerWidth;
@@ -27,26 +70,41 @@ resize();
 
 function drawTexture() {
   const skyHeight = height * .75;
+  const lawnHeight = height - skyHeight;
   textureCtx.save();
   textureCtx.setTransform(1, 0, 0, 1, 0, 0);
   textureCtx.clearRect(0, 0, texture.width, texture.height);
   textureCtx.restore();
   textureCtx.fillStyle = '#087aba';
   textureCtx.fillRect(0, 0, width, skyHeight);
-  const bands = 14;
+  const bands = 25;
   for (let i = 0; i < bands; i++) {
     const y = Math.random() * skyHeight;
-    const h = 24 + Math.random() * 72;
-    const alpha = 0.018 + Math.random() * 0.028;
+    const h = 2 + Math.random() * 46;
+    const alpha = 0.018 + Math.random() * 0.05;
     textureCtx.fillStyle = `rgba(${Math.random() > .55 ? '181,234,255' : '0,36,99'},${alpha})`;
     textureCtx.fillRect(0, y, width, h);
   }
-  const count = Math.ceil(width * skyHeight / 180);
+  // 明显可见的复古方形像素噪点：每次刷新都会跳帧改变位置与亮度。
+  const count = Math.ceil(width * skyHeight / 260);
   for (let i = 0; i < count; i++) {
-    const s = Math.random() < .85 ? 1 : 2;
-    const a = 0.025 + Math.random() * 0.065;
+    const s = 1 + Math.floor(Math.random() * 3);
+    const a = 0.025 + Math.random() * 0.1;
     textureCtx.fillStyle = Math.random() < .62 ? `rgba(230,255,255,${a})` : `rgba(0,31,84,${a})`;
     textureCtx.fillRect(Math.random() * width, Math.random() * skyHeight, s, s);
+  }
+  // 透明的草地区域上只叠加颗粒与短扫描线，让图像本身仍然清晰可见。
+  const lawnNoise = Math.ceil(width * lawnHeight / 210);
+  for (let i = 0; i < lawnNoise; i++) {
+    const s = 1 + Math.floor(Math.random() * 3);
+    const alpha = .025 + Math.random() * .09;
+    textureCtx.fillStyle = Math.random() < .58 ? `rgba(191,255,119,${alpha})` : `rgba(0,20,7,${alpha})`;
+    textureCtx.fillRect(Math.random() * width, skyHeight + Math.random() * lawnHeight, s, s);
+  }
+  for (let i = 0; i < 14; i++) {
+    const y = skyHeight + Math.random() * lawnHeight;
+    textureCtx.fillStyle = `rgba(${Math.random() < .5 ? '168,255,101' : '0,24,9'},${.035 + Math.random() * .07})`;
+    textureCtx.fillRect(Math.random() * width, y, 30 + Math.random() * width * .3, 1 + Math.random() * 2);
   }
 }
 
@@ -203,7 +261,7 @@ function makeWalker(x, y) {
   // 每个人只改变整体高度与箭头数量；骨架比例、步幅和行走节奏完全共用。
   const size = .56 + Math.random() * .58;
   const density = .20 + size * .70;
-  walkers.push({ x: startX, startX, y: Math.max(250, Math.min(height - 16, y)), age: 0, duration: 5200 + Math.random() * 900, scale: Math.max(.75, Math.min(1.25, height / 760)) * size, seed: Math.random() * 10, particles: buildHuman(density), overlapActive: false, armScatterActive: false, leftArmMigrationActive: false, headMigrationActive: false, nextDissipation: 1150, dissipationIndex: 0, scatterBursts: [] });
+  walkers.push({ x: startX, startX, y: Math.max(250, Math.min(height - 16, y)), age: 0, duration: 5200 + Math.random() * 900, scale: Math.max(.75, Math.min(1.25, height / 760)) * size, size, seed: Math.random() * 10, particles: buildHuman(density), overlapActive: false, armScatterActive: false, leftArmMigrationActive: false, headMigrationActive: false, nextDissipation: 1150, dissipationIndex: 0, scatterBursts: [] });
   glitchEnergy = 1;
 }
 
@@ -223,7 +281,7 @@ function animate(now) {
   const dt = Math.min(48, now - last);
   last = now;
   glitchEnergy = Math.max(0, glitchEnergy - dt / 1700);
-  const textureInterval = glitchEnergy > .04 ? 85 : 1100;
+  const textureInterval = glitchEnergy > .04 ? 85 : 430;
   if (now - lastTextureUpdate > textureInterval) {
     drawTexture();
     lastTextureUpdate = now;
@@ -234,7 +292,11 @@ function animate(now) {
   ctx.restore();
   ctx.drawImage(texture, 0, 0, width, height);
   glitchOverlay(glitchEnergy);
+  const behindIconDraws = [];
+  const frontIconDraws = [];
   walkers = walkers.filter(w => {
+    // 人物只按整体高度和箭头数量分层；动作与比例不受层级影响。
+    const drawQueue = w.size < .82 ? behindIconDraws : frontIconDraws;
     w.age += dt;
     const travel = Math.max(0, Math.min(1, (w.age - 850) / (w.duration - 850)));
     w.x = w.startX - (w.startX + 140) * travel;
@@ -377,12 +439,14 @@ function animate(now) {
       p.scatter.age += dt;
       const progress = p.scatter.age / 600;
       if (progress >= 1) return false;
-      cursor({
+      const scatterCursor = {
         x: p.scatter.x + p.scatter.dx * progress,
         y: p.scatter.y + p.scatter.dy * progress,
         scale: p.scatter.scale,
         rotation: p.scatter.rotation * progress
-      }, life * (1 - progress));
+      };
+      const scatterOpacity = life * (1 - progress);
+      drawQueue.push(() => cursor(scatterCursor, scatterOpacity));
       return true;
     });
 
@@ -405,14 +469,19 @@ function animate(now) {
         if (migration >= 1) delete p.migration;
       }
 
-      cursor({
+      const bodyCursor = {
         x: w.x + posed.x * w.scale,
         y: w.y + posed.y * w.scale + bob,
         scale: posed.scale * w.scale
-      }, opacity);
+      };
+      drawQueue.push(() => cursor(bodyCursor, opacity));
     });
     return w.age < w.duration;
   });
+  // 图标夹在两组人物之间，小人物隐在图标后，大人物覆盖在图标上。
+  behindIconDraws.forEach(draw => draw());
+  drawBackgroundIcons();
+  frontIconDraws.forEach(draw => draw());
   requestAnimationFrame(animate);
 }
 canvas.addEventListener('pointerdown', event => makeWalker(event.clientX, event.clientY));
